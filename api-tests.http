@@ -1,0 +1,2 @@
+### Step 3: Fetch all jobs (minimal unfiltered endpoint)
+GET http://localhost:3000/api/jobs
