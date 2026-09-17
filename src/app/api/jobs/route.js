@@ -17,6 +17,7 @@ const querySchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((val) => (val === undefined ? undefined : val === "true")),
+  cursor: z.string().datetime().optional(),
 });
 
 /**
@@ -31,6 +32,7 @@ export async function GET(request) {
   const rawQ = searchParams.get("q");
   const rawTag = searchParams.get("tag");
   const rawRemote = searchParams.get("remote");
+  const rawCursor = searchParams.get("cursor");
 
   // 2. Validate and sanitize parameters with Zod
   const parsedQuery = querySchema.safeParse({
@@ -38,6 +40,7 @@ export async function GET(request) {
     q: rawQ ?? undefined,
     tag: rawTag ?? undefined,
     remote: rawRemote ?? undefined,
+    cursor: rawCursor ?? undefined,
   });
 
   if (!parsedQuery.success) {
@@ -50,7 +53,7 @@ export async function GET(request) {
     );
   }
 
-  const { limit, q, tag, remote } = parsedQuery.data;
+  const { limit, q, tag, remote, cursor } = parsedQuery.data;
 
   // 3. Build the Supabase query with optional filters
   let query = supabase.from("jobs").select("*");
@@ -67,8 +70,12 @@ export async function GET(request) {
     query = query.eq("is_remote", remote);
   }
 
+  if (cursor) {
+    query = query.lt('posted_at', cursor);
+  }
+
   // 4. Execute query with applied limit
-  const { data: jobs, error } = await query.limit(limit);
+  const { data: jobs, error } = await query.order('posted_at', { ascending: false }).limit(limit);
 
   if (error) {
     return NextResponse.json(
@@ -77,5 +84,13 @@ export async function GET(request) {
     );
   }
 
-  return NextResponse.json(jobs, { status: 200 });
+  let nextCursor;
+
+  if (jobs.length === limit) {
+    nextCursor = jobs[jobs.length - 1].posted_at;
+  } else {
+    nextCursor = null;
+  }
+
+  return NextResponse.json({ data: jobs, nextCursor }, { status: 200 });
 }
